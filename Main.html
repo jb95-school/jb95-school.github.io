@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Student Placement Narrative Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+    body {
+      font-family: sans-serif;
+      margin: 0;
+    }
+    #nav {
+      display: flex;
+      justify-content: center;
+      margin: 1em;
+    }
+    button {
+      margin: 0 1em;
+      padding: 0.5em 1em;
+    }
+    #viz {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 600px;
+    }
+    .annotation {
+      font-size: 16px;
+      font-weight: bold;
+      text-anchor: middle;
+    }
+    .legend text {
+      font-size: 14px;
+    }
+    .legend rect {
+      stroke: #ccc;
+      stroke-width: 1;
+    }
+    select {
+      position: absolute;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+<div id="nav">
+    <button id="prev">Previous</button>
+    <button id="next">Next</button>
+</div>
+<div id="viz">
+    <svg width="900" height="600"></svg>
+</div>
+<script>
+    const svg = d3.select("svg");
+    const margin = { top: 100, right: 30, bottom: 60, left: 60 };
+    const width = +svg.attr("width") - margin.left - margin.right;
+    const height = +svg.attr("height") - margin.top - margin.bottom;
+    const chart = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+    let rawData = [];
+    let placementCounts = {}, academicMeans = {}, skillMeans = {};
+
+    function drawLegend(colors, labels, x, y) {
+      const legend = svg.append("g")
+        .attr("class", "legend")
+        .attr("transform", `translate(${x}, ${y})`);
+
+      labels.forEach((label, i) => {
+        legend.append("rect")
+          .attr("x", 0)
+          .attr("y", i * 20)
+          .attr("width", 18)
+          .attr("height", 18)
+          .attr("fill", colors(label));
+
+        legend.append("text")
+          .attr("x", 24)
+          .attr("y", i * 20 + 14)
+          .text(label);
+      });
+    }
+
+    function clearScene() {
+      chart.selectAll("*").remove();
+      svg.selectAll(".annotation, .legend, #hoverLabel").remove();
+      d3.select("select")?.remove();
+    }
+
+    function showHover(event, label) {
+  d3.select("#hoverLabel").remove();
+  const [x, y] = d3.pointer(event, svg.node());
+  svg.append("foreignObject")
+    .attr("id", "hoverLabel")
+    .attr("x", x + 10)
+    .attr("y", y - 10)
+    .attr("width", 220)
+    .attr("height", 40)
+    .append("xhtml:div")
+    .style("background", "white")
+    .style("border", "1px solid #ccc")
+    .style("padding", "5px 8px")
+    .style("font-size", "14px")
+    .style("color", "#000")
+    .style("border-radius", "4px")
+    .style("box-shadow", "0px 2px 6px rgba(0,0,0,0.2)")
+    .style("pointer-events", "none")
+    .html(label);
+}
+
+
+    function processData(data) {
+      rawData = data;
+      data.forEach(d => {
+        d.CGPA = +d.CGPA;
+        d.IQ = +d.IQ;
+        d.Prev_Sem_Result = +d.Prev_Sem_Result;
+        d.Communication_Skills = +d.Communication_Skills;
+        d.Projects_Completed = +d.Projects_Completed;
+      });
+
+      const grouped = d3.group(data, d => d.Placement);
+      placementCounts = {};
+      academicMeans = { CGPA: {}, IQ: {}, Prev_Sem_Result: {} };
+      skillMeans = { Communication_Skills: {}, Projects_Completed: {} };
+
+      grouped.forEach((group, key) => {
+        placementCounts[key] = group.length;
+        academicMeans.CGPA[key] = d3.mean(group, d => d.CGPA);
+        academicMeans.IQ[key] = d3.mean(group, d => d.IQ);
+        academicMeans.Prev_Sem_Result[key] = d3.mean(group, d => d.Prev_Sem_Result);
+        skillMeans.Communication_Skills[key] = d3.mean(group, d => d.Communication_Skills);
+        skillMeans.Projects_Completed[key] = d3.mean(group, d => d.Projects_Completed);
+      });
+
+      scenes[0]();
+    }
+
+function scene1() {
+  clearScene();
+  const data = Object.entries(placementCounts);
+  const radius = Math.min(width, height) / 2 - 50;
+  const pie = d3.pie().value(function(d) { return d[1]; });
+  const arc = d3.arc().innerRadius(0).outerRadius(radius);
+  const color = d3.scaleOrdinal().domain(data.map(function(d) { return d[0]; })).range(["#1b9e77", "#d95f02"]);
+
+  const pieGroup = chart.append("g")
+    .attr("transform", "translate(" + (width / 2) + "," + (height / 2) + ")");
+
+  const total = d3.sum(data, function(d) { return d[1]; });
+
+  pieGroup.selectAll("path")
+    .data(pie(data))
+    .enter()
+    .append("path")
+    .attr("d", arc)
+    .attr("fill", function(d) { return color(d.data[0]); })
+    .on("mousemove", function(event, d) {
+      showHover(event, d.data[0] + ": " + d.data[1] + " (" + ((d.data[1] / total) * 100).toFixed(1) + "%)");
+    })
+    .on("mouseout", function() {
+      d3.select("#hoverLabel").remove();
+    });
+
+  pieGroup.selectAll("text")
+    .data(pie(data))
+    .enter()
+    .append("text")
+    .text(function(d) { return ((d.data[1] / total) * 100).toFixed(1) + "%"; })
+    .attr("transform", function(d) { return "translate(" + arc.centroid(d) + ")"; })
+    .attr("text-anchor", "middle")
+    .attr("alignment-baseline", "middle")
+    .attr("fill", "white")
+    .attr("font-size", 14);
+
+  svg.append("text")
+    .attr("x", 450)
+    .attr("y", 40)
+    .attr("class", "annotation")
+    .text("Scene 1: Overall Placement Rate");
+
+  drawLegend(color, data.map(function(d) { return d[0]; }), 700, 100);
+}
+
+
+function scene2() {
+  clearScene();
+  const metrics = Object.keys(academicMeans);
+  const groups = ['Not Placed', 'Placed'];
+  const x = d3.scaleBand().domain(metrics).range([0, width]).padding(0.4);
+  const y = d3.scaleLinear().domain([0, 120]).range([height, 0]);
+  const color = d3.scaleOrdinal().domain(groups).range(['#d95f02', '#1b9e77']);
+
+  metrics.forEach(metric => {
+    groups.forEach((group, j) => {
+      const value = academicMeans[metric][group === 'Placed' ? 'Yes' : 'No'];
+      chart.append("rect")
+        .attr("x", x(metric) + j * (x.bandwidth() / 2))
+        .attr("y", y(value))
+        .attr("width", x.bandwidth() / 2)
+        .attr("height", height - y(value))
+        .attr("fill", color(group))
+        .on("mousemove", function(event) {
+          showHover(event, `${group} ${metric}: ${value.toFixed(2)}`);
+        })
+        .on("mouseout", () => d3.select("#hoverLabel").remove());
+    });
+  });
+
+  chart.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x));
+  chart.append("g").call(d3.axisLeft(y));
+
+  svg.append("text")
+    .attr("x", 450).attr("y", 40)
+    .attr("class", "annotation")
+    .text("Scene 2: Academic Metrics by Placement");
+
+  drawLegend(color, groups, 700, 100);
+}
+
+function scene3() {
+      clearScene();
+      const metrics = Object.keys(skillMeans);
+      const groups = ['Not Placed', 'Placed'];
+      const x = d3.scaleBand().domain(metrics).range([0, width]).padding(0.4);
+      const y = d3.scaleLinear().domain([0, 10]).range([height, 0]);
+      const color = d3.scaleOrdinal().domain(groups).range(['#e7298a', '#66a61e']);
+
+      metrics.forEach(metric => {
+        groups.forEach((group, j) => {
+          const value = skillMeans[metric][group === 'Placed' ? 'Yes' : 'No'];
+          chart.append("rect")
+            .attr("x", x(metric) + j * (x.bandwidth() / 2))
+            .attr("y", y(value))
+            .attr("width", x.bandwidth() / 2)
+            .attr("height", height - y(value))
+            .attr("fill", color(group))
+            .on("mousemove", function(event) { showHover(event, `${group} ${metric}: ${value.toFixed(2)}`); })
+            .on("mouseout", () => d3.select("#hoverLabel").remove());
+        });
+      });
+
+      chart.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x));
+      chart.append("g").call(d3.axisLeft(y));
+      svg.append("text").attr("x", 450).attr("y", 40).attr("class", "annotation").text("Scene 3: Skills & Experience");
+      drawLegend(color, groups, 700, 100);
+    }
+
+    function scene4() {
+      clearScene();
+      svg.append("text").attr("x", 450).attr("y", 40).attr("class", "annotation").text("Scene 4: Explore a Feature by Placement");
+
+      const features = ['CGPA', 'IQ', 'Prev_Sem_Result', 'Communication_Skills', 'Projects_Completed'];
+      const select = d3.select("#viz").append("select").attr("id", "featureSelect");
+      select.selectAll("option")
+        .data(features)
+        .enter()
+        .append("option")
+        .attr("value", d => d)
+        .text(d => d);
+
+      function updateFeature(selectedFeature) {
+        chart.selectAll("*").remove();
+
+        const data = rawData.map(d => ({ feature: +d[selectedFeature], placement: d.Placement }));
+        const x = d3.scaleLinear().domain(d3.extent(data, d => d.feature)).range([0, width]);
+
+        const bins = d3.histogram()
+          .value(d => d.feature)
+          .domain(x.domain())
+          .thresholds(x.ticks(20))(data);
+
+        const y = d3.scaleLinear()
+          .domain([0, d3.max(bins, bin => d3.max(['Yes', 'No'].map(group => bin.filter(d => d.placement === group).length)))])
+          .range([height, 0]);
+
+        const color = d3.scaleOrdinal().domain(['No', 'Yes']).range(['#d95f02', '#1b9e77']);
+
+        bins.forEach(bin => {
+          ['No', 'Yes'].forEach(group => {
+            const count = bin.filter(d => d.placement === group).length;
+            chart.append("rect")
+              .attr("x", x(bin.x0))
+              .attr("y", y(count))
+              .attr("width", (x(bin.x1) - x(bin.x0)) / 2)
+              .attr("height", height - y(count))
+              .attr("fill", color(group))
+              .attr("transform", group === 'Yes' ? `translate(${(x(bin.x1) - x(bin.x0)) / 2},0)` : '')
+              .on("mousemove", function(event) {
+                showHover(event, `${group} bin ${bin.x0.toFixed(1)}–${bin.x1.toFixed(1)}: ${count}`);
+              })
+              .on("mouseout", () => d3.select("#hoverLabel").remove());
+          });
+        });
+
+        chart.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x));
+        chart.append("g").call(d3.axisLeft(y));
+        drawLegend(color, ['No', 'Yes'], 700, 100);
+      }
+
+      updateFeature(features[0]);
+      d3.select("#featureSelect").on("change", function() {
+        updateFeature(this.value);
+      });
+    }
+
+    const scenes = [scene1, scene2, scene3, scene4];
+    let sceneIndex = 0;
+    document.getElementById("next").addEventListener("click", () => { if (sceneIndex < scenes.length - 1) { sceneIndex++; scenes[sceneIndex](); } });
+    document.getElementById("prev").addEventListener("click", () => { if (sceneIndex > 0) { sceneIndex--; scenes[sceneIndex](); } });
+    d3.csv("college_student_placement_dataset.csv").then(processData);
+  </script>
+</body>
+</html>
+
+
+
+
+
